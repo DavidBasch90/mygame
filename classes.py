@@ -23,10 +23,14 @@ map_img = pygame.image.load("./assets/images/map.png")
 
 class GameClock:
     def __init__(self):
-        self.start_time = pygame.time.get_ticks()
+        self.start_time = pygame.time.get_ticks() - 21600000  # Start at 6 AM
 
     def get_time(self):
-        return (pygame.time.get_ticks() - self.start_time) / 1000  # Time in seconds
+        total_seconds = (pygame.time.get_ticks() - self.start_time) // 1000
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
 
 
 
