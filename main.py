@@ -228,7 +228,7 @@ while running:
                 interacting_npc.render_text(screen,
                                             interacting_npc.current_message + " Do you want to battle? (Y/N)")
             elif interacting_npc.dialogue_state == "ask" or interacting_npc.dialogue_state == "defeated":
-                interacting_npc.render_text(screen, interacting_npc.current_message)
+                interacting_npc.render_text(screen, interacting_npc.defeated_message)
 
 
     else:
