@@ -15,10 +15,7 @@ FPS = 30
 player_img = pygame.image.load("./assets/images/player.png")
 npc_img = pygame.image.load("./assets/images/npc.png")
 map_img = pygame.image.load("./assets/images/map.png")
-#import the images
-player_img = pygame.image.load("./assets/images/player.png")
-npc_img = pygame.image.load("./assets/images/npc.png")
-map_img = pygame.image.load("./assets/images/map.png")
+
 
 
 class GameClock:
@@ -61,15 +58,33 @@ class Player(pygame.sprite.Sprite):
         self.speed = 5
         self.team = []
 
-    def update(self, keys):
+    def update(self, keys, house_rects, log_rects, pond_rects):
+        dx = dy = 0
         if keys[pygame.K_UP]:
-            self.rect.y -= self.speed
+            dy -= self.speed
         if keys[pygame.K_DOWN]:
-            self.rect.y += self.speed
+            dy += self.speed
         if keys[pygame.K_LEFT]:
-            self.rect.x -= self.speed
+            dx -= self.speed
         if keys[pygame.K_RIGHT]:
-            self.rect.x += self.speed
+            dx += self.speed
+
+        # Check for potential collisions
+        future_rect = self.rect.move(dx, dy)
+        for house_rect in house_rects:
+            if future_rect.colliderect(house_rect):
+                # Potential collision detected, don't move the player
+                return
+        for log_rect in log_rects:
+            if future_rect.colliderect(log_rect):
+                return
+        for pond_rect in pond_rects:
+            if future_rect.colliderect(pond_rect):
+                return
+
+        # No collisions detected, move the player
+        self.rect = future_rect
+
 
 class NPC(pygame.sprite.Sprite):
     def __init__(self, x, y, message, defeated_message, team,logger):
@@ -162,17 +177,17 @@ class Battle:
         self.main_menu = Menu(["Fight", "Items"], 200, 400, font)
         self.moves_menu = None
         self.player_selected_move = False
+        self.message = ""
+        self.message_queue = []
 
-    def display_end_battle_message(self, screen, font, message):
-        text = font.render(message, True, (255, 255, 255))
-        screen.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
-        pygame.display.update()
-        pygame.time.wait(2000)  # Wait for 2 seconds so the player can read the message
+
     def is_npc_defeated(self):
         return len(self.npc_team) == 0
 
     def draw(self, screen):
+        battlebg = pygame.image.load("./assets/images/battlebg.jpg")
         screen.fill((0, 0, 0))  # Fill the screen with black color
+        screen.blit(battlebg, (0, 0))
 
         if self.player_team:
             player_monster = self.player_team[0]
@@ -186,6 +201,7 @@ class Battle:
 
         # Draw battle menu
         if self.state == "waiting_for_input":
+
             if self.menu_state == "main":
                 self.main_menu.draw(screen)
             elif self.menu_state == "moves":
@@ -194,11 +210,33 @@ class Battle:
                     self.moves_menu = Menu(moves, 200, 400, self.font)
                 self.moves_menu.draw(screen)
 
+            # Draw message bar
+            message_x = 50
+            message_y = 500
+            message_width = WIDTH - 2 * message_x
+            message_height = 50
+            pygame.draw.rect(screen, (0, 0, 0),
+                             (message_x, message_y, message_width, message_height))  # Black background
+            if self.message_queue:
+                render_text(screen, self.font, self.message_queue[0], message_x + 10, message_y + 10,
+                            (255, 255, 255))  # White text
+
+            # Update the display
+
+
+            pygame.display.flip()
+
     def use_move(self, attacker, move_name, defender):
         for move in attacker.moves:
             if move.name == move_name:
                 damage = int(attacker.attack * move.power - defender.defense)
                 defender.health = max(defender.health - damage, 0)
+                message = f"{attacker.name} used {move.name}!"
+                if random.random() >= move.accuracy:
+                    message += " The move missed!"
+                else:
+                    message += f" It dealt {damage} damage!"
+                self.message_queue.append(message)
                 break
 
     class Move:
@@ -232,6 +270,10 @@ class Battle:
 
                 # Check if the 'Z' key was pressed
                 elif event.key == pygame.K_z:
+                    if self.message_queue:
+                        self.message_queue.pop(0)
+                        if not self.message_queue and not self.npc_team:
+                            return "battle_done"
                     # If the menu state is 'main'
                     if self.menu_state == "main":
                         selected_item = self.main_menu.get_selected_item()
@@ -257,9 +299,9 @@ class Battle:
         battle_done = False
         if not self.player_team or not self.npc_team:
             if not self.npc_team:
-                print("Player wins! WE ARE IN UPDATE")
+                self.message_queue.append("You win!")
             elif not self.player_team:
-                print("NPC wins!")
+                self.message_queue.append("You lose!")
             return True
 
         if self.state == "npc_turn":
@@ -268,9 +310,9 @@ class Battle:
             self.use_move(current_monster, move_name, self.player_team[0])
             if self.player_team[0].health == 0:
                 self.player_team.pop(0)
-                print('player team:',)
+                self.message = "Player's monster fainted!"
                 if not self.player_team:
-                    print("NPC wins!")
+                    self.message = "Player wins!"
                     return
                 else:
                     self.state = "waiting_for_input"
@@ -280,26 +322,27 @@ class Battle:
 
 
         elif self.state == "waiting_for_input":
-            for event in events:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
-                    # Check if the menu state is 'moves'
-                    if self.menu_state == "moves":
-                        if not self.player_selected_move:
-                            self.player_selected_move = True
-                        else:
-                            current_monster = self.player_team[self.current_monster]
-                            selected_move = self.moves_menu.get_selected_item()
-                            self.use_move(current_monster, selected_move, self.npc_team[0])
+            if not self.message_queue:
+                for event in events:
+                    if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
+                        # Check if the menu state is 'moves'
+                        if self.menu_state == "moves":
+                            if not self.player_selected_move:
+                                self.player_selected_move = True
+                            else:
+                                current_monster = self.player_team[self.current_monster]
+                                selected_move = self.moves_menu.get_selected_item()
+                                self.use_move(current_monster, selected_move, self.npc_team[0])
 
-                            if self.npc_team[0].health == 0:
-                                self.npc_team.pop(0)  # Remove defeated monster
-                                print(self.npc_team)
-                                if not self.npc_team:
-                                    print("Player wins! WE ARE IN UPDATE2")
-                                    return
+                                if self.npc_team[0].health == 0:
+                                    self.npc_team.pop(0)  # Remove defeated monster
+                                    print(self.npc_team)
+                                    if not self.npc_team:
+                                        print("Player wins! WE ARE IN UPDATE2")
+                                        return
 
-                            self.state = "npc_turn"
-                            self.player_selected_move = False
+                                self.state = "npc_turn"
+                                self.player_selected_move = False
 
         return None
 
